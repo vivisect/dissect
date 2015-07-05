@@ -17,7 +17,7 @@ from setuptools import setup,find_packages
 setup(
     name='dissect',
     version='0.0.1',
-    description='Vivisect File/Protocol Parsers',
+    description='Vivisect (Mark II) File/Protocol Parsers',
     author='Invisigoth Kenshoto',
     author_email='invisigoth.kenshoto@gmail.com',
     url='https://github.com/vivisect/dissect',
