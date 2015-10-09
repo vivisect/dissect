@@ -1,8 +1,5 @@
 '''
 Vivisect (Mark II) File/Protocol Parsers
-
-See dissect/files/ for file format parsers.
-See dissect/protos/ for network protocol parsers.
-
 '''
-version = (0,0,1)
+__version__ = (0,0,1)
+__copyright__ = 'Copyright 2015 Invisigoth (invisigoth.kenshoto@gmail.com)'

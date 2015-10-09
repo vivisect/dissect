@@ -14,9 +14,11 @@ from setuptools import setup,find_packages
 # python3.4 setup.py bdist_wheel upload
 # python3.4 -m pip install
 
+import dissect
+
 setup(
     name='dissect',
-    version='0.0.1',
+    version='.'.join( str(v) for v in dissect.__version__ ),
     description='Vivisect (Mark II) File/Protocol Parsers',
     author='Invisigoth Kenshoto',
     author_email='invisigoth.kenshoto@gmail.com',
@@ -24,6 +26,10 @@ setup(
     license='Apache License 2.0',
 
     packages=find_packages(exclude=['*.tests','*.tests.*']),
+
+    install_requires=[
+        'vstruct>=2.0.2',
+    ],
 
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
