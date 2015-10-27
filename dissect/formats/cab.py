@@ -1,11 +1,16 @@
-import zlib
 import tempfile
+from io import BytesIO
 
 from vstruct.types import *
 from dissect.filelab import *
+import dissect.bitlab as bitlab
+from dissect.algos.huffman import *
+
+class OffCabFile(Exception):pass
 
 #https://msdn.microsoft.com/en-us/library/bb417343.aspx
 
+_CAB_MAGIC      = b'MSCF'
 _A_RDONLY       = 0x01  # file is read-only 
 _A_HIDDEN       = 0x02  # file is hidden 
 _A_SYSTEM       = 0x04  # file is a system file 
@@ -28,6 +33,9 @@ comp.LZX      = 0x03 # ms lzx compression
 # 01 - compressed with fixed Huffman codes
 # 10 - compressed with dynamic Huffman codes
 # 11 - reserved (error)
+HUFF_UNCOMP  = 0x0
+HUFF_FIXED   = 0x1
+HUFF_DYNAMIC = 0x2
 
 def btype(x):
     return (x >> 5) & 0x3
@@ -68,6 +76,7 @@ class CFHEADER(VStruct):
         self['flags'].vsOnset( self._onSetFlags )
         self['cFiles'].vsOnset( self._onSetFiles )
         self['cFolders'].vsOnset( self._onSetFolders )
+        
         #self['cbCFHeader'].vsOnset( self._onSetCfHeader )
 
     def _onSetFiles(self):
@@ -113,13 +122,13 @@ class CFFOLDER(VStruct):
 class CFFILE(VStruct):
     def __init__(self):
         VStruct.__init__(self)
-        self.cbFile             = uint32()
-        self.uoffFolderStart    = uint32()
-        self.iFolder            = uint16()
-        self.date               = uint16()
-        self.time               = uint16()
-        self.attribs            = uint16()
-        self.szName             = zstr()
+        self.cbFile             = uint32()   # uncompressed size of this file in bytes
+        self.uoffFolderStart    = uint32()   # uncompressed offset of this file in the folder
+        self.iFolder            = uint16()   # index into the CFFOLDER area
+        self.date               = uint16()   # date stamp for this file
+        self.time               = uint16()   # time stamp for this file
+        self.attribs            = uint16()   # attribute flags for this file
+        self.szName             = zstr()     # name of this file
 
 class CFDATA(VStruct):
     def __init__(self,abres=0):
@@ -143,25 +152,94 @@ class CabLab(FileLab):
         self.addOnDemand('filesbyname', self._loadFilesByName )
 
         self.decomps = {
-            comp.MSZIP:self._deCompMsZip,
+            comp.MSZIP:self._deCompMsZipBlock,
         }
 
-    def _deCompMsZip(self, byts):
-        if not byts.startswith(b'CK'):
-            raise Exception('Invalid MsZip Block: %r' % (byts[:8],))
+        self.huff = HuffRfc1951()
 
-        deco = zlib.decompressobj(-15)
-        ret = deco.decompress(byts[2:])
-        return ret
+    def _deCompDynHuffman(self, bits):
+        return self.huff.getDynHuffBlock(bits)
+
+    def _deCompFixedHuffman(self, bits):
+        return self.huff.getFixHuffBlock(bits)
+
+    def _getUncompBlock(self, bits, byts):
+        # TODO Assuming we are at index 3 here
+        cast(bits, 5)
+        dlen = cast(bits, 16)
+        clen = cast(bits, 16)
+        out = []
+        if (dlen ^ 0xFFFF) != clen:
+            raise DeflateError('Invalid uncompressed block length')
+
+        return byts[ 5 : 5 + dlen]
+
+    def _deCompMsZipBlock(self, block):
+        final = 0
+        msblock = []
+        byts = block.ab
+        if not byts.startswith(b'CK'):
+            raise OffCabFile('Invalid MsZip Block: %r' % (byts[:8],))
+        
+        data = byts[2:]
+
+        bits = bitlab.bits(data)
+
+        while not final:
+            final = cast(bits, 1)
+            bt = cast(bits, 2)
+            if bt == HUFF_UNCOMP:
+                msblock.extend(self._getUncompBlock(bits, data))
+            elif bt == HUFF_FIXED:
+                msblock.extend(self._deCompFixedHuffman(bits))
+            elif bt == HUFF_DYNAMIC:
+                msblock.extend(self._deCompDynHuffman(bits))
+
+            else:
+                raise OffCabFile('Invalid block type')
+        return msblock
 
     def _getCabHeader(self):
-        return self.getStruct(0, CFHEADER)
+        hdr = self.getStruct(0, CFHEADER)
+        if _CAB_MAGIC != hdr.signature:
+            raise OffCabFile('Invalid CAB File Header: %r' % (hdr.signature,))
+        return hdr
 
     def _loadFilesByName(self):
         ret = {}
         for off,cff in self['CFHEADER'].cfFileArray:
             ret[cff.szName] = cff
         return ret
+
+    def getCabFiles(self):
+        '''
+        Yield (name, info, fd) tuples for files within the cab.
+
+        Example:
+
+            for filename, finfo, fd in cab.getCabFiles(self):
+                fdata = fd.read()
+        '''
+
+        cfh = self['CFHEADER']
+        ifldr = None
+        fdata = b''
+        for fname,finfo in self.listCabFiles():
+            fsize = finfo['size']
+            uoff = finfo['uoff']
+
+            if finfo['ifldr'] != ifldr:
+                fldr = cfh.cfDirArray[finfo['ifldr']]
+                ifldr = finfo['ifldr']
+                icd = self.iterCabData(fldr.coffCabStart, fldr.cCFData)
+            
+            while len(fdata) < fsize:
+                blk = next(icd)
+                fdata += bytes(self.decomps[fldr.typeCompress](blk))
+            
+            bio = BytesIO(fdata[:fsize])
+            fdata = fdata[fsize:]
+            yield (fname, finfo, bio)
 
     def listCabFiles(self):
         '''
@@ -177,124 +255,15 @@ class CabLab(FileLab):
         for idx,cff in cfh.cfFileArray:
             fileinfo = dict(size=cff.cbFile,attrs=cff.attribs)
             fileinfo['comp'] = repr( cfh.cfDirArray[cff.iFolder]['typeCompress'] )
+            fileinfo['ifldr'] = cff.iFolder
+            fileinfo['uoff'] = cff.uoffFolderStart
             yield cff.szName, fileinfo
 
-    def openCabFile(self, name, fd=None):
+    def iterCabData(self, off, cnt):
         '''
-        Returns a file like object for the named files bytes.
-
-        ( optionally specify fd as the file like object to read into )
+        Yield CFDATA blocks within the cab.
         '''
-        cff = self['filesbyname'].get(name)
-        if cff == None:
-            raise Exception('CAB File Not Found: %s' % name)
 
-        cfo = self['CFHEADER'].cfDirArray[cff.iFolder]
-        if fd == None:
-            fd = tempfile.SpooledTemporaryFile(max_size=1000000)
-
-        cff.vsPrint()
-        cfo.vsPrint()
-
-        # iterate data blocks from our dir, beginning at our offset
-        umin = cff.uoffFolderStart
-        umax = cff.uoffFolderStart + cff.cbFile
-
-        print('UMIN: %d UMAX: %d' % (umin,umax))
-
-        #uncomp = b''
-        lastb = b''
-
-        deco = zlib.decompressobj(-zlib.MAX_WBITS)
-        for uoff,cfd in self.iterCabData( cfo.coffCabStart ):
-            #cfd.vsPrint()
-            print(cfd)
-
-            # do we want any of this one?
-            if uoff >= umax:
-                break
-
-            #uncomp = deco.decompress( cfd.ab[2:] )
-            if cfd.ab[:2] != b'CK':
-                raise Exception('omg')
-
-            print( len(cfd.ab) )
-
-            #deco = zlib.decompressobj(-15)
-            #if lastb:
-                #deco.decompress( lastb )
-                #deco.flush( zlib.Z_SYNC_FLUSH )
-
-            #lastb = cfd.ab[2:]
-            #todecomp = deco.unconsumed_tail + cfd.ab[2:]
-
-            #deco = zlib.decompressobj(-zlib.MAX_WBITS)
-            #if lastb:
-                #deco.decompress( lastb )
-
-            #lastb = cfd.ab[2:]
-
-            comp = bytearray(cfd.ab[2:])
-            #print( hex(comp[0]) )
-            print('btype: %d bfinal: %s' % (btype(comp[0]),bfinal(comp[0])))
-            #comp[0] &= 0x7f
-            #comp[0] = comp[0] & 0x7f
-
-            uncomp = deco.decompress( comp )
-            #uncomp += deco.copy().flush()
-    
-            # sub-block is marked as "last" ( spin up a new decoder )
-            #if comp[0] & 0x80:
-                #deco = zlib.decompressobj(-zlib.MAX_WBITS)
-
-            ulen = len(uncomp)
-            if len(uncomp) != cfd.cbUncomp:
-                raise Exception('Inflate Size Failure: %d (wanted: %d)' % (ulen,cfd.cbUncomp))
-
-            print('tail: %d %d' % (len(deco.unconsumed_tail),len(deco.unused_data)))
-            #uncomp += deco.copy().flush( zlib.Z_SYNC_FLUSH )
-            #uncomp += deco.flush()
-            print('ucomp len: %d %d' % (len(uncomp),cfd.cbUncomp ))
-            #print('UNCOMP: %r' % (uncomp,))
-            #uncomp += deco.flush( zlib.Z_SYNC_FLUSH )
-            #uncomp += deco.flush()
-            #print('TAIL: %r %r' % (uncomp, deco.unconsumed_tail,))
-
-            if (uoff + cfd.cbUncomp) < umin:
-                continue
-
-            #deco = self.decomps.get( cfo.typeCompress )
-            #if deco == None:
-                #raise Exception('UnHandled Compression: %s' % cfo.typeCompress)
-
-            #uncomp = deco( cfd.ab )
-
-            #print(repr(cfd.ab))
-            #print(repr(cfd.ab[:4]))
-            #uncomp = zlib.decompress(cfd.ab[2:],-15)
-            #uncomp = deco.decompress(cfd.ab[2:])
-            #print('HI: %r' % (uncomp,))
-
-            smin = 0
-            if uoff < umin:
-                smin = uoff - umin
-
-            smax = cfd.cbUncomp
-            if uoff + smax > umax:
-                smax = umax - uoff
-
-            #print( uncomp[smin:smax] )
-            #fd.write( uncomp[smin:smax] )
-
-        #uncomp += deco.flush()
-        #print('UNCOMP: %r' % (uncomp,))
-        #print('UNCOMP: %r' % (len(uncomp),))
-        print('UNCOMP: %r' % (uncomp[umin:umax],))
-        #fd.write( uncomp[umin:umax] )
-
-        return fd
-
-    def iterCabData(self, off):
         uoff = 0
         abres = 0
 
@@ -302,13 +271,9 @@ class CabLab(FileLab):
         if cfh.flags & _F_RESERVE_PRESENT:
             abres = cfh.cbOptFields.cbCFData
 
-        uoff = self.off + off
-        while True:
-            cfd = self.getStruct(off, CFDATA, abres=abres)
-
-            yield (uoff,cfd)
-            uoff += cfd.cbUncomp
-            off += len( cfd )
+        cda = self.getStruct(off, varray(cnt, CFDATA, abres=abres))
+        for idx,cd in cda:
+            yield cd
 
     def getCabVersion(self):
         '''
