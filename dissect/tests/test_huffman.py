@@ -19,8 +19,3 @@ class HuffTest(unittest.TestCase):
         
         # self.assertEqual( tuple(book), huffbook )
         # self.assertEqual( tuple(syms), huffsyms )
-
-    def test_huff_rfc1951(self):
-        
-        huff = huffman.HuffRfc1951()
-        #self.assertEqual( huff.getCodeBySym(0), (8,0b00110000) )
