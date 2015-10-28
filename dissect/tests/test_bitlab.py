@@ -8,7 +8,9 @@ class BitLabTest(unittest.TestCase):
         self.assertEqual( len(list(bitlab.bits(b'ABC'))), 24 )
 
         bits = bitlab.bits(b'A')
+        self.assertEqual( bitlab.cast(bits,5), 1)
+        self.assertEqual( bitlab.cast(bits,3), 2)
 
-        self.assertEqual( bitlab.cast(bits,5), 8)
-        self.assertEqual( bitlab.cast(bits,3), 1)
-
+        bits = bitlab.bits(b'A', reverse=True)
+        self.assertEqual( bitlab.cast(bits,5), 2)
+        self.assertEqual( bitlab.cast(bits,3), 4)
