@@ -1,17 +1,23 @@
 from dissect.compat import iterbytes
 
-def bits(byts, expand=True):
+LSB = (0,1,2,3,4,5,6,7)
+MSB = (7,6,5,4,3,2,1,0)
+
+def bits(byts, reverse=False, expand=True):
     '''
     Yield generator for bits within bytes.
     '''
+    bord = LSB
+    if reverse:
+        bord = MSB
     if expand:
-        foo = [ ((b >> shft) & 0x01) for b in iterbytes(byts) for shft in (0,1,2,3,4,5,6,7) ]
+        foo = [ ((b >> shft) & 0x01) for b in iterbytes(byts) for shft in bord ]
         for b in foo:
             yield b
     else:
         for byt in iterbytes(byts):
             # HACK this is super ugly in order to go faster...
-            for bit in [ (byt >> shft) & 0x1 for shft in (0,1,2,3,4,5,6,7) ]:
+            for bit in [ (byt >> shft) & 0x1 for shft in bord ]:
                 yield bit
 
 def cast(bitgen,bitsize):
@@ -29,7 +35,10 @@ def cast(bitgen,bitsize):
 
 class BitStream(object):
     def __init__(self, byts):
-        self.bits = [ ((b >> shft) & 0x01) for b in iterbytes(byts) for shft in (0,1,2,3,4,5,6,7) ]
+        bord = LSB
+        if reverse:
+            bord = MSB
+        self.bits = [ ((b >> shft) & 0x01) for b in iterbytes(byts) for shft in bord ]
         self.idx = 0
 
     def __iter__(self):
@@ -68,7 +77,3 @@ class BitStream(object):
             ret |= val << i
         self.idx += bitsize
         return ret
-
-#s = BitStream(b'AA')
-#for x in s.getBits():
-#    print(x)
