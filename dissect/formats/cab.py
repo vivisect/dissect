@@ -4,7 +4,7 @@ from io import BytesIO
 from vstruct.types import *
 from dissect.filelab import *
 import dissect.bitlab as bitlab
-from dissect.algos.huffman import *
+import dissect.algos.huffman as huffman
 
 class OffCabFile(Exception):pass
 
@@ -155,7 +155,7 @@ class CabLab(FileLab):
             comp.MSZIP:self._deCompMsZipBlock,
         }
 
-        self.huff = HuffRfc1951()
+        self.huff = huffman.HuffRfc1951()
 
     def _deCompDynHuffman(self, bits):
         return self.huff.getDynHuffBlock(bits)
@@ -165,9 +165,9 @@ class CabLab(FileLab):
 
     def _getUncompBlock(self, bits, byts):
         # TODO Assuming we are at index 3 here
-        cast(bits, 5)
-        dlen = cast(bits, 16)
-        clen = cast(bits, 16)
+        bitlab.cast(bits, 5)
+        dlen = bitlab.cast(bits, 16)
+        clen = bitlab.cast(bits, 16)
         out = []
         if (dlen ^ 0xFFFF) != clen:
             raise DeflateError('Invalid uncompressed block length')
@@ -186,8 +186,8 @@ class CabLab(FileLab):
         bits = bitlab.bits(data)
 
         while not final:
-            final = cast(bits, 1)
-            bt = cast(bits, 2)
+            final = bitlab.cast(bits, 1)
+            bt = bitlab.cast(bits, 2)
             if bt == HUFF_UNCOMP:
                 msblock.extend(self._getUncompBlock(bits, data))
             elif bt == HUFF_FIXED:
