@@ -191,7 +191,6 @@ class CabLab(FileLab):
            if finfo['ifldr'] != ifldr:
                ifldr = finfo['ifldr']
                fldr = cfh.cfDirArray[finfo['ifldr']]
-               print(fldr.vsPrint())
                calg = fldr.typeCompress & 3
                icd = self.iterCabData(fldr.coffCabStart, fldr.cCFData)
                dblk = self.decomps[calg](icd, fldr.typeCompress)
