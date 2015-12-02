@@ -4,7 +4,8 @@ from io import BytesIO
 from vstruct.types import *
 from dissect.filelab import *
 import dissect.bitlab as bitlab
-import dissect.algos.huffman as huffman
+import dissect.algos.mszip as mszip 
+import dissect.algos.lzx as lzx
 
 class OffCabFile(Exception):pass
 
@@ -27,21 +28,6 @@ comp.NONE     = 0x00 # no compression
 comp.MSZIP    = 0x01 # ms decompress compression
 comp.QUANTUM  = 0x02 # ms quantum compression
 comp.LZX      = 0x03 # ms lzx compression
-
-#BTYPE specifies how the data are compressed, as follows:
-# 00 - no compression
-# 01 - compressed with fixed Huffman codes
-# 10 - compressed with dynamic Huffman codes
-# 11 - reserved (error)
-HUFF_UNCOMP  = 0x0
-HUFF_FIXED   = 0x1
-HUFF_DYNAMIC = 0x2
-
-def btype(x):
-    return (x >> 5) & 0x3
-
-def bfinal(x):
-    return bool( x >> 7) & 0x1
 
 class CFHEADER(VStruct):
 
@@ -152,52 +138,29 @@ class CabLab(FileLab):
         self.addOnDemand('filesbyname', self._loadFilesByName )
 
         self.decomps = {
+            comp.NONE:self._deCompNoneBlock,
             comp.MSZIP:self._deCompMsZipBlock,
+            comp.QUANTUM:self._deCompQuantumBlock,
+            comp.LZX:self._deCompLzxBlock
         }
 
-        self.huff = huffman.HuffRfc1951()
 
-    def _deCompDynHuffman(self, bits):
-        return self.huff.getDynHuffBlock(bits)
+    def _deCompNoneBlock(self, itblks, comp_type=None):
+        for d in itblks:
+            yield d.ab
 
-    def _deCompFixedHuffman(self, bits):
-        return self.huff.getFixHuffBlock(bits)
+    def _deCompLzxBlock(self, itblks, comp_type):
+        lzxd = lzx.Lzx(comp_type)
+        for d in lzxd.decompBlock(itblks):
+            yield d
 
-    def _getUncompBlock(self, bits, byts):
-        # TODO Assuming we are at index 3 here
-        bitlab.cast(bits, 5)
-        dlen = bitlab.cast(bits, 16)
-        clen = bitlab.cast(bits, 16)
-        out = []
-        if (dlen ^ 0xFFFF) != clen:
-            raise DeflateError('Invalid uncompressed block length')
+    def _deCompMsZipBlock(self, itblks, comp_type=None):
+        mszipd = mszip.MsZip()
+        for d in mszipd.decompBlock(itblks):
+            yield d
 
-        return byts[ 5 : 5 + dlen]
-
-    def _deCompMsZipBlock(self, block):
-        final = 0
-        msblock = []
-        byts = block.ab
-        if not byts.startswith(b'CK'):
-            raise OffCabFile('Invalid MsZip Block: %r' % (byts[:8],))
-        
-        data = byts[2:]
-
-        bits = bitlab.bits(data)
-
-        while not final:
-            final = bitlab.cast(bits, 1)
-            bt = bitlab.cast(bits, 2)
-            if bt == HUFF_UNCOMP:
-                msblock.extend(self._getUncompBlock(bits, data))
-            elif bt == HUFF_FIXED:
-                msblock.extend(self._deCompFixedHuffman(bits))
-            elif bt == HUFF_DYNAMIC:
-                msblock.extend(self._deCompDynHuffman(bits))
-
-            else:
-                raise OffCabFile('Invalid block type')
-        return msblock
+    def _deCompQuantumBlock(self, itblks, comp_type=None):
+            raise NotImplementedError('Quantum is not support...yet')
 
     def _getCabHeader(self):
         hdr = self.getStruct(0, CFHEADER)
@@ -212,34 +175,34 @@ class CabLab(FileLab):
         return ret
 
     def getCabFiles(self):
-        '''
-        Yield (name, info, fd) tuples for files within the cab.
-
+       '''
+        
         Example:
 
             for filename, finfo, fd in cab.getCabFiles(self):
                 fdata = fd.read()
-        '''
+       ''' 
+       cfh = self['CFHEADER']
+       ifldr = None
+       fdata = b''
+       for fname,finfo in self.listCabFiles():
+           fsize = finfo['size']
+           uoff = finfo['uoff']
+           if finfo['ifldr'] != ifldr:
+               ifldr = finfo['ifldr']
+               fldr = cfh.cfDirArray[finfo['ifldr']]
+               print(fldr.vsPrint())
+               calg = fldr.typeCompress & 3
+               icd = self.iterCabData(fldr.coffCabStart, fldr.cCFData)
+               dblk = self.decomps[calg](icd, fldr.typeCompress)
 
-        cfh = self['CFHEADER']
-        ifldr = None
-        fdata = b''
-        for fname,finfo in self.listCabFiles():
-            fsize = finfo['size']
-            uoff = finfo['uoff']
+           while fsize > len(fdata):
+               fdata += next(dblk)
+           
+           bio = BytesIO(fdata[:fsize])
+           fdata = fdata[fsize:]
+           yield (fname, finfo, bio)
 
-            if finfo['ifldr'] != ifldr:
-                fldr = cfh.cfDirArray[finfo['ifldr']]
-                ifldr = finfo['ifldr']
-                icd = self.iterCabData(fldr.coffCabStart, fldr.cCFData)
-            
-            while len(fdata) < fsize:
-                blk = next(icd)
-                fdata += bytes(self.decomps[fldr.typeCompress](blk))
-            
-            bio = BytesIO(fdata[:fsize])
-            fdata = fdata[fsize:]
-            yield (fname, finfo, bio)
 
     def listCabFiles(self):
         '''
@@ -272,6 +235,7 @@ class CabLab(FileLab):
             abres = cfh.cbOptFields.cbCFData
 
         cda = self.getStruct(off, varray(cnt, CFDATA, abres=abres))
+        
         for idx,cd in cda:
             yield cd
 
