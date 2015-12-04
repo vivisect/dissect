@@ -180,12 +180,14 @@ class Lzx(LzxHuffTree):
         '''
         Initialize parser to process an uncompressed LZX block from a bitstream object
         '''
-        self.ival = 1
-        self.alignWord(bits)
-        self.r0 = self.readInt(bits)
-        self.r1 = self.readInt(bits)
-        self.r2 = self.readInt(bits)
+        need = 16 - (bits.getOffset() % 16)
+        self.cast(bits, need)
         
+        self.ival = 1
+        
+        self.r0 = self.readInt(bits) 
+        self.r1 = self.readInt(bits)
+        self.r2 = self.readInt(bits) 
 
     def readInt(self, bits):
         '''
@@ -193,7 +195,7 @@ class Lzx(LzxHuffTree):
         '''
         byts = self.readBytes(bits, 4)
         return int.from_bytes(byts, 'little')
-
+    
     def readBytes(self, bits, cnt):
         '''
         Read bytes from a bitstream object and byte flip. The byte flip is 
@@ -285,7 +287,6 @@ class Lzx(LzxHuffTree):
 
             if self.winpos % LZX_FRAME_SIZE == 0:
                 self.alignWord(bits)
-
             if run >= remains:
                 yield self._getWinView(-run, run)
                 raise StopIteration
@@ -365,7 +366,6 @@ class Lzx(LzxHuffTree):
             
             if self.winpos % LZX_FRAME_SIZE == 0:
                 self.alignWord(bits)
-            
             if run >= remains:
                 yield self._getWinView(-run, run)
                 raise StopIteration
@@ -400,7 +400,6 @@ class Lzx(LzxHuffTree):
         while remains:
             # Get the bytes left in this frame
             align = self._getFrameAlign(bits) 
-             
             # Is the window currently frame aligned?
             if align == 0:
                 need = LZX_FRAME_SIZE
@@ -412,7 +411,6 @@ class Lzx(LzxHuffTree):
 
             byts = self.readBytes(bits, need)
             [self._winAppend(b) for b in byts]
-
             yield byts
             remains -= need
 
@@ -428,7 +426,6 @@ class Lzx(LzxHuffTree):
         Align the given bitstream object to word (16-bit) alignment
         '''
         need = (16) - bits.getOffset() % 16
-        
         if need == 16:
             # Already word aligned, leave
             return
@@ -469,8 +466,8 @@ class Lzx(LzxHuffTree):
        indices = [i for i, b in enumerate(ibuf) if b == INSTR_CALL]
        if len(indices):
            offs = [l for i, l in enumerate(indices) if i != 0
-                   and l - indices[i-1] >= 5
-                   and l < (len(ibuf)-5)]
+                   and l - indices[i-1] >= 5 
+                   and l < (len(ibuf)-8)]
            indices = [indices[0]] + offs
 
        for i, idx in enumerate(indices):
@@ -489,6 +486,7 @@ class Lzx(LzxHuffTree):
                     reloff = absoff - curpos 
                 else:
                     reloff = absoff + self.ifs
+
                 ibuf[idx]   = (0xFF & reloff)
                 ibuf[idx+1] = (0xFF & (reloff >> 8))
                 ibuf[idx+2] = (0xFF & (reloff >> 16))
@@ -532,7 +530,6 @@ class Lzx(LzxHuffTree):
            
             btype,blen = self.getBlockHeader(bits)
             self.decomps[btype][0](bits)
-             
             run = blen
             for frame in self.decomps[btype][1](bits, blen):
 
