@@ -7,10 +7,10 @@ class BitLabTest(unittest.TestCase):
 
         self.assertEqual( len(list(bitlab.bits(b'ABC'))), 24 )
 
-        bits = bitlab.bits(b'A')
-        self.assertEqual( bitlab.cast(bits,5), 1)
-        self.assertEqual( bitlab.cast(bits,3), 2)
+        bits = bitlab.BitStream(b'A', order='big')
+        self.assertEqual( bits.cast(5), 8)
+        self.assertEqual( bits.cast(3), 1)
 
-        bits = bitlab.bits(b'A', reverse=True)
-        self.assertEqual( bitlab.cast(bits,5), 2)
-        self.assertEqual( bitlab.cast(bits,3), 4)
+        bits = bitlab.BitStream(b'A', order='little')
+        self.assertEqual( bits.cast(5), 16)
+        self.assertEqual( bits.cast(3), 2)
