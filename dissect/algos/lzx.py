@@ -98,6 +98,8 @@ class Lzx(LzxHuffTree):
     LZX Decompressor
     '''
     def __init__(self, comp_type):
+        self.debug = []
+        self.test  = False
         LzxHuffTree.__init__(self)
         self.wbits = (comp_type >> 8) & 0x1f 
         self.wsize = 1 << self.wbits
@@ -454,6 +456,7 @@ class Lzx(LzxHuffTree):
        '''
        Decode intel preprocessing if necessary
        '''
+       self.debug += self._getWinView(-fsize, fsize)
        if not self.ival or not self.ifs or self.frmcnt > LZX_FRAME_SIZE and fsize <= 10:
            if self.ifs:
                self.icp += fsize
@@ -461,27 +464,33 @@ class Lzx(LzxHuffTree):
 
        curpos = ctypes.c_int(self.icp).value
        ibuf =  self._getWinView(-fsize, fsize)
-       
+
        # Find all occurances of a 'call' byte
        indices = [i for i, b in enumerate(ibuf) if b == INSTR_CALL]
-       if len(indices):
-           offs = [l for i, l in enumerate(indices) if i != 0
-                   and l - indices[i-1] >= 5 
-                   and l < (len(ibuf)-8)]
-           indices = [indices[0]] + offs
+       if not len(indices):
+           self.icp += fsize
+           return self._getWinView(-fsize, fsize)
 
-       for i, idx in enumerate(indices):
-            idx += 1
-            
+       # Validate the markers
+       markers = [indices[0]]
+       for i,l in enumerate(indices):
+            if l - markers[-1] >= 5 and l < (len(ibuf)-10):
+                markers.append(l)
+
+       for i, idx in enumerate(markers):
+
             if i == 0:
-                curpos += idx-1
+                curpos += idx
             else:
-                curpos += (idx - indices[i-1] - 1) 
+                curpos += (idx - markers[i-1]) 
+
+            idx += 1
 
             absoff = ctypes.c_int((ibuf[idx] | (ibuf[idx+1]<<8) | 
                                   (ibuf[idx+2]<<16) | (ibuf[idx+3]<<24) ))
             absoff = absoff.value
-            if absoff >= -curpos and absoff < self.ifs:
+            prev = absoff
+            if absoff >= -(0xFFFFFFFF & curpos) and absoff < self.ifs:
                 if absoff >= 0:
                     reloff = absoff - curpos 
                 else:
@@ -491,7 +500,7 @@ class Lzx(LzxHuffTree):
                 ibuf[idx+1] = (0xFF & (reloff >> 8))
                 ibuf[idx+2] = (0xFF & (reloff >> 16))
                 ibuf[idx+3] = (0xFF & (reloff >> 24))
-
+    
        self.icp += fsize
        return ibuf
 
