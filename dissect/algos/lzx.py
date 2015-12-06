@@ -473,7 +473,7 @@ class Lzx(LzxHuffTree):
 
        # Validate the markers
        markers = [indices[0]]
-       for i,l in enumerate(indices):
+       for l in indices:
             if l - markers[-1] >= 5 and l < (len(ibuf)-10):
                 markers.append(l)
 
