@@ -4,3 +4,10 @@ Vivisect (Mark II) File/Protocol Parsers
 
 # vstruct
 See https://github.com/vivisect/vstruct
+
+# Builds
+## Travis-Ci ( Linux: py-2.7 / py-3.4 )
+[![Build Status](https://travis-ci.org/vivisect/dissect.svg)](https://travis-ci.org/vivisect/dissect)
+## AppVeyor ( Windows: py-2.7 / py-3.4 )
+[![Build Status](https://ci.appveyor.com/api/projects/status/github/vivisect/dissect?branch=master&svg=true)](https://ci.appveyor.com/project/vivisect/dissect/)
+
