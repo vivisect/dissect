@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 import dissect.bitlab as bitlab
 import dissect.algos.huffman as huff
 
