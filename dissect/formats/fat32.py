@@ -1014,7 +1014,7 @@ class FAT32(v_types.VStruct):
         '''
         total number of clusters in this file system.
         '''
-        return self.total_sector_count - self.clusters_offset
+        return (self.total_sector_count - self.clusters_offset) // self.bpb.BPB_SecPerClus
 
     @property
     def fat_size(self):
