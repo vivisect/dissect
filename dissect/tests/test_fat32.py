@@ -5,8 +5,8 @@ import unittest
 import binascii
 import contextlib
 
-from .. import mbr
-from .. import fat32
+import dissect.mbr as mbr
+import dissect.fat32 as fat32
 
 
 TEST_IMAGE_PATH = "test.dd"
