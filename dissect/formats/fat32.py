@@ -1498,9 +1498,9 @@ class FAT32LogicalFileSystem:
         '''
         dir_data = self._fat.getDirectoryData(cluster_number)
         # allocate the directory entry, one cluster larger
-        d = parent_dir_data.vsEmit()
+        d = dir_data.vsEmit()
         d += self._fat.empty_cluster
-        self._fat.setContent(parent_dir.cluster_number, d)
+        self._fat.setContent(cluster_number, d)
 
     def addDirectory(self, path):
         '''
