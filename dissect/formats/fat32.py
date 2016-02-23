@@ -794,7 +794,6 @@ class DIRECTORY_DATA(v_types.VArray):
         current_long_name_entries = []
 
         g_logger.debug('directory: del entry: name: %s', name)
-        entries = self._genEntries(name, cluster_number, size=size)
         for i in range(self.num_entries):
             entry = self[i]
 
