@@ -11,11 +11,18 @@ import vstruct.types as v_types
 import dissect.formats.mbr as mbr
 
 
+g_logger = logging.getLogger('dissect.formats.fat32')
+
+
 class FileExistsException(Exception):
     pass
 
 
 class FileDoesNotExistException(Exception):
+    pass
+
+
+class IllegalArgumentException(ValueError):
     pass
 
 
@@ -384,6 +391,15 @@ class LONG_DIRECTORY_ENTRY(v_types.VStruct):
         '''
         return self.LDIR_Ord in (0x0, 0xE5)
 
+    def __str__(self):
+        if self.is_free:
+            return 'LONG_DIRECTORY_ENTRY (free)'
+        else:
+            n = self.name_fragment.rstrip(b'\xFF').partition(b'\x00\x00\x00')[0]
+            if len(n) % 2 != 0:
+                n += b'\x00'
+            return 'LONG_DIRECTORY_ENTRY (fragment: %s)' % (n.decode('utf-16le'))
+
 
 class DIRECTORY_DATA(v_types.VArray):
     '''
@@ -517,8 +533,7 @@ class DIRECTORY_DATA(v_types.VArray):
         if full_name in ('.', '..'):
             return full_name.ljust(DIR_NAME_SIZE, ' ')
 
-        if full_name[0] == '.':
-            raise IllegalArgumentException('filename cannot start with a period')
+        full_name = full_name.lstrip('.')
 
         if '.' in full_name:
             name, _, ext = full_name.rpartition('.')
@@ -712,8 +727,8 @@ class DIRECTORY_DATA(v_types.VArray):
 
         entry.DIR_Name = short_name.encode('ascii')
         entry.DIR_Attr = flags
-        entry.DIR_FstClusHI = (int(cluster_number) & 0xFF00) >> 16
-        entry.DIR_FstClusLO = (int(cluster_number) & 0x00FF)
+        entry.DIR_FstClusHI = (int(cluster_number) & 0xFFFF00) >> 16
+        entry.DIR_FstClusLO = (int(cluster_number) & 0x00FFFF)
         entry.DIR_FileSize = size
 
         long_entries = self._genLongEntries(name, short_name)
@@ -738,7 +753,9 @@ class DIRECTORY_DATA(v_types.VArray):
 
         entries = self._genEntries(name, cluster_number, flags=DIRECTORY_ATTRIBUTES.ATTR_DIRECTORY)
 
+        g_logger.debug('directory: add directory: name: %s start: %x', name, cluster_number)
         for i, entry in zip(self.getEmptySlots(len(entries)), entries):
+            g_logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
             self[i] = entry
 
     def addFileEntry(self, name, size, cluster_number):
@@ -756,8 +773,10 @@ class DIRECTORY_DATA(v_types.VArray):
         if self.is_full:
             raise DirectoryDataIsFullException()
 
+        g_logger.debug('directory: add file: name: %s len: %x  start: %x', name, size, cluster_number)
         entries = self._genEntries(name, cluster_number, size=size)
         for i, entry in zip(self.getEmptySlots(len(entries)), entries):
+            g_logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
             self[i] = entry
 
     def delEntry(self, name):
@@ -774,6 +793,8 @@ class DIRECTORY_DATA(v_types.VArray):
         indices_to_remove = []
         current_long_name_entries = []
 
+        g_logger.debug('directory: del entry: name: %s', name)
+        entries = self._genEntries(name, cluster_number, size=size)
         for i in range(self.num_entries):
             entry = self[i]
 
@@ -789,6 +810,7 @@ class DIRECTORY_DATA(v_types.VArray):
 
             if entry.name == name or name == self._reconstructLongName(current_long_name_entries):
                 for index in indices_to_remove:
+                    g_logger.debug('directory: del index: index: %x', index)
                     self[index].DIR_Name = b'\xE5' + b'\x00' * (DIR_NAME_SIZE - 1)
                 return
             else:
@@ -855,7 +877,7 @@ class FAT32ClusterArray(v_types.VArray):
         '''
         super(FAT32ClusterArray, self).__init__(fields=(
             # first two clusters are reserved, and should not be fetched/set
-            [v_types.vbytes(0), v_types.vbytes(0)] + [Cluster(cluster_size) for _ in range(count)]))
+            [v_types.vbytes(0), v_types.vbytes(0)] + [Cluster(cluster_size) for _ in range(count-2)]))
 
 
 class FAT32(v_types.VStruct):
@@ -866,7 +888,7 @@ class FAT32(v_types.VStruct):
       - FS_INFO
       - ClusterArray
 
-    there are intermediate "unallocated" vbytes regions that represent the
+    there are intermediate 'unallocated' vbytes regions that represent the
      slack data between these structures.
     '''
     def __init__(self, is_new_fs):
@@ -946,8 +968,9 @@ class FAT32(v_types.VStruct):
 
         # add cluster array, if the FS is initialized
         if not self._is_new_fs:
-            clusters_offset = (self.bpb.BPB_RsvdSecCnt * (self.fat_size * self.bpb.BPB_NumFATs)) * mbr.SECTOR_SIZE
-            clusters = SubStructureDescriptor('clusters', clusters_offset, self.cluster_size * self.total_cluster_count,
+            clusters = SubStructureDescriptor('clusters',
+                    self.clusters_offset * mbr.SECTOR_SIZE,
+                    self.cluster_size * self.total_cluster_count,
                     FAT32ClusterArray(self.cluster_size, self.total_cluster_count))
             items.append(clusters)
 
@@ -991,7 +1014,7 @@ class FAT32(v_types.VStruct):
         '''
         total number of clusters in this file system.
         '''
-        return self.total_sector_count // self.bpb.BPB_SecPerClus
+        return self.total_sector_count - self.clusters_offset
 
     @property
     def fat_size(self):
@@ -1011,6 +1034,13 @@ class FAT32(v_types.VStruct):
         number of entries in each allocation table.
         '''
         return (self.fat_size * mbr.SECTOR_SIZE) // FAT_ENTRY_SIZE
+
+    @property
+    def clusters_offset(self):
+        '''
+        offset in sectors of the start of the cluster array
+        '''
+        return self.bpb.BPB_RsvdSecCnt * (self.fat_size * self.bpb.BPB_NumFATs)
 
     @property
     def cluster_size(self):
@@ -1052,6 +1082,7 @@ class FAT32(v_types.VStruct):
         set the allocation table entry at the given index, mirroring the value
          across all allocation tables in this file system.
         '''
+        g_logger.debug('fat: set fat entry: %x %x', index, value)
         for f in self.fats:
             f[index] = value
 
@@ -1073,6 +1104,7 @@ class FAT32(v_types.VStruct):
         '''
         set a cluster as unallocated.
         '''
+        g_logger.debug('fat: set entry free: %x', i)
         self._setFatEntry(i, CLUSTER_TYPES.UNUSED)
 
     def markClusterUsed(self, i, next_cluster=CLUSTER_TYPES.LAST):
@@ -1081,6 +1113,7 @@ class FAT32(v_types.VStruct):
         if `next_cluster` is provided then it is the next cluster number in the chain.
         otherwise, this is the last entry in the chain.
         '''
+        g_logger.debug('fat: set entry used: %x', i)
         self._setFatEntry(i, next_cluster)
 
     def getClusterChain(self, cluster_num):
@@ -1149,9 +1182,13 @@ class FAT32(v_types.VStruct):
         # essentially the cluster chain we'll use to store the data
         cluster_numbers = []
 
+        g_logger.debug('fat: set content: start: %x len: %x', start_cluster_num, len(data))
+        g_logger.debug('fat: set content: clusters needed: %x', num_clusters_needed)
+
         if self.isClusterFree(start_cluster_num):
-            num_new_clusters_needed = num_clusters_needed
+            g_logger.debug('fat: set content: new allocation')
         else:
+            g_logger.debug('fat: set content: existing allocation')
             cluster_chain = self.getClusterChain(start_cluster_num)
 
             # don't get confused by the final entry of the cluster chain, which is always a LAST entry
@@ -1165,15 +1202,18 @@ class FAT32(v_types.VStruct):
             if num_new_clusters_needed < 0:
                 # the existing cluster chain is longer than needed
                 # so mark the tail entries as UNUSED, and the final as LAST
+                g_logger.debug('fat: set content: clipping existing allocation: %x clusters', -num_new_clusters_needed)
                 for i in range(num_new_clusters_needed, -1):
                     self.markClusterFree(cluster_chain[i])
                 self.markClusterUsed(cluster_chain[num_new_clusters_needed], CLUSTER_TYPES.LAST)
                 num_new_clusters_needed = 0
 
+        g_logger.debug('fat: set content: needed clusters: %x', num_clusters_needed - len(cluster_numbers))
         # find `num_clusters_needed` count of free clusters by doing a simple scan.
         # this algorithm could be faster if we cached the list of free clusters somewhere.
-        for i in range(self.total_cluster_count):
+        for i in range(2, self.total_cluster_count):
             if self._getFatEntry(i) == CLUSTER_TYPES.UNUSED:
+                g_logger.debug('fat: set content: found free cluster: %x', i)
                 cluster_numbers.append(i)
 
             if len(cluster_numbers) == num_clusters_needed:
@@ -1196,13 +1236,16 @@ class FAT32(v_types.VStruct):
         # note that at this point, these clusters aren't actually allocated.
         # ...good thing we're not supporting concurrency
         for cluster_num, cluster_chunk in zip(cluster_numbers, cluster_chunks):
+            g_logger.debug('fat: set content: set cluster: %x', cluster_num)
             self.clusters[cluster_num] = cluster_chunk
 
         # set the cluster chain in the file allocation table
+        g_logger.debug('setting chain: ...')
         cur_cluster_num = cluster_numbers.pop(0)
         first_cluster_num = cur_cluster_num
         while len(cluster_numbers) > 0:
             self.markClusterUsed(cur_cluster_num, cluster_numbers[0])
+            g_logger.debug('chain entry: %s %s' % (hex(cur_cluster_num), hex(cluster_numbers[0])))
             cur_cluster_num = cluster_numbers.pop(0)
         self.markClusterUsed(cur_cluster_num, CLUSTER_TYPES.LAST)
 
@@ -1216,6 +1259,7 @@ class FAT32(v_types.VStruct):
         rtype: int
         '''
         num = self.getFreeClusterNumber()
+        g_logger.debug('add content: free cluster: %x len: %x', num, len(data))
         self.setContent(num, data)
         return num
 
@@ -1241,6 +1285,9 @@ class FAT32(v_types.VStruct):
         '''
         run_data = self.getContent(start_cluster_number)
         num_entries = len(run_data) // FILE_ENTRY_SIZE
+        if num_entries > 200:
+            g_logger.debug('directory data: chain: %s', self.getClusterChain(start_cluster_number))
+            g_logger.debug('directory data: start: %x len: %x num: %x', start_cluster_number, len(run_data), num_entries)
         dir_data = DIRECTORY_DATA(num_entries)
         dir_data.vsParse(run_data)
         return dir_data
@@ -1498,9 +1545,9 @@ class FAT32LogicalFileSystem:
         '''
         dir_data = self._fat.getDirectoryData(cluster_number)
         # allocate the directory entry, one cluster larger
-        d = parent_dir_data.vsEmit()
+        d = dir_data.vsEmit()
         d += self._fat.empty_cluster
-        self._fat.setContent(parent_dir.cluster_number, d)
+        self._fat.setContent(cluster_number, d)
 
     def addDirectory(self, path):
         '''
