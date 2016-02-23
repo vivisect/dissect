@@ -8,7 +8,7 @@ import functools
 
 import vstruct.types as v_types
 
-import dissect.mbr as mbr
+import dissect.formats.mbr as mbr
 
 
 class FileExistsException(Exception):
