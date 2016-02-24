@@ -184,7 +184,7 @@ def test_image():
         yield
 
     finally:
-        #os.remove(TEST_IMAGE_PATH)
+        os.remove(TEST_IMAGE_PATH)
         pass
 
 
