@@ -194,6 +194,9 @@ class FS_INFO(v_types.VStruct):
             raise CorruptFileSystemError('invalid FS_INFO TailSig')
 
 
+LAST_CLUSTER_CHAIN_ENTRIES = (CLUSTER_TYPES.UNUSED, CLUSTER_TYPES.BAD, CLUSTER_TYPES.LAST)
+             
+
 class FILE_ALLOCATION_TABLE(v_types.VArray):
     '''
     key datastructure of FAT32. defines the allocation state of each
@@ -262,14 +265,8 @@ class FILE_ALLOCATION_TABLE(v_types.VArray):
                 entry = CLUSTER_TYPES.LAST
 
             ret.append(entry)
-            if entry == CLUSTER_TYPES.UNUSED:
+            if entry in LAST_CLUSTER_CHAIN_ENTRIES:
                 break
-            elif entry == CLUSTER_TYPES.BAD:
-                break
-            elif entry == CLUSTER_TYPES.LAST:
-                break
-            else:
-                pass
 
             nxt = self[entry]
             if nxt is None:
