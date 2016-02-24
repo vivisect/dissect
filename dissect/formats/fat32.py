@@ -878,7 +878,7 @@ class FAT32(v_types.VStruct):
     there are intermediate 'unallocated' vbytes regions that represent the
      slack data between these structures.
     '''
-    def __init__(self, is_new_fs):
+    def __init__(self, is_new_fs=False):
         '''
         param is_new_fs: is the FS initialized? if not, disables parsing/verification of some structures.
         '''
