@@ -299,27 +299,24 @@ class DIRECTORY_ENTRY(v_types.VStruct):
         self.DIR_FstClusLO = v_types.uint16()
         self.DIR_FileSize = v_types.uint32()
 
-    @property
-    def is_free(self):
+    def isFree(self):
         '''
         is this directory entry currently in use?
         '''
         return self.DIR_Name[0] in (0x00, 0xE5)
 
-    @property
-    def is_long_name(self):
+    def isLongName(self):
         '''
         is this directory entry actually a LONG_DIRECTORY_ENTRY?
         if so, you should not interpret its contents using this structure.
         '''
         return self.DIR_Attr & DIRECTORY_ATTRIBUTES.ATTR_LONG_NAME == DIRECTORY_ATTRIBUTES.ATTR_LONG_NAME
 
-    @property
-    def name(self):
+    def getName(self):
         '''
         reconstruct the 8.3 name for this directory entry.
         '''
-        if self.is_free:
+        if self.isFree():
             return ''
         elif self.DIR_Name[0:4] == b'\xFF\xFF\xFF\xFF':
             return ''
@@ -331,8 +328,7 @@ class DIRECTORY_ENTRY(v_types.VStruct):
             else:
                 return name.decode('ascii').partition('\x00')[0]
 
-    @property
-    def first_cluster(self):
+    def getFirstClusterNumber(self):
         '''
         get the local cluster number of the data for this entry.
 
@@ -341,12 +337,12 @@ class DIRECTORY_ENTRY(v_types.VStruct):
         return (self.DIR_FstClusHI << 16) | self.DIR_FstClusLO
 
     def __str__(self):
-        if self.is_free:
+        if self.isFree():
             return 'DIRECTORY_ENTRY (free)'
-        elif self.is_long_name:
+        elif self.isLongName():
             return 'DIRECTORY_ENTRY (long name)'
         else:
-            return 'DIRECTORY_ENTRY (name: %s)' % (self.name)
+            return 'DIRECTORY_ENTRY (name: %s)' % (self.getName())
 
 
 # via: https://staff.washington.edu/dittrich/misc/fatgen103.pdf
@@ -374,25 +370,23 @@ class LONG_DIRECTORY_ENTRY(v_types.VStruct):
         if self.LDIR_Attr != DIRECTORY_ATTRIBUTES.ATTR_LONG_NAME:
             raise CorruptFileSystemError('bad directory entry attributes')
 
-    @property
-    def name_fragment(self):
+    def getNameFragment(self):
         '''
         the part of the long name stored in this long directory entry.
         '''
         return self.LDIR_Name1 + self.LDIR_Name2 + self.LDIR_Name3
 
-    @property
-    def is_free(self):
+    def isFree(self):
         '''
         is this directory entry currently in use?
         '''
         return self.LDIR_Ord in (0x0, 0xE5)
 
     def __str__(self):
-        if self.is_free:
+        if self.isFree():
             return 'LONG_DIRECTORY_ENTRY (free)'
         else:
-            n = self.name_fragment.rstrip(b'\xFF').partition(b'\x00\x00\x00')[0]
+            n = self.getNameFragment().rstrip(b'\xFF').partition(b'\x00\x00\x00')[0]
             if len(n) % 2 != 0:
                 n += b'\x00'
             return 'LONG_DIRECTORY_ENTRY (fragment: %s)' % (n.decode('utf-16le'))
@@ -434,7 +428,7 @@ class DIRECTORY_DATA(v_types.VArray):
             # we need to interpret the data as LONG_DIRECTORY_ENTRYs
             lentry = LONG_DIRECTORY_ENTRY()
             cast_vstruct(entry, lentry)
-            name_fragments.append(lentry.name_fragment)
+            name_fragments.append(lentry.getNameFragment())
             hashes.add(lentry.LDIR_Chksum)
 
         if len(hashes) > 1:
@@ -446,8 +440,7 @@ class DIRECTORY_DATA(v_types.VArray):
         long_name = long_name.partition(b'\xFF\xFF')[0].decode('utf-16le').rstrip('\x00')
         return long_name
 
-    @property
-    def entries(self):
+    def getEntries(self):
         '''
         the DIRECTORY_ENTRYs in this DIRECTORY_DATA.
 
@@ -456,31 +449,29 @@ class DIRECTORY_DATA(v_types.VArray):
         for i in range(self.num_entries):
             yield self[i]
 
-    @property
-    def is_full(self):
+    def isFull(self):
         '''
         are all entries in this DIRECTORY_DATA allocated and non-free?
 
         rtype: bool
         '''
-        for entry in self.entries:
-            if entry.is_free:
+        for entry in self.getEntries():
+            if entry.isFree():
                 return False
         return True
 
-    @property
-    def is_empty(self):
+    def isEmpty(self):
         '''
         does this DIRECTORY_DATA contain no files or directories?
 
         rtype: bool
         '''
-        for entry in self.entries:
-            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.is_long_name:
+        for entry in self.getEntries():
+            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.isLongName():
                 continue
 
-            if not entry.is_free:
-                if entry.name in ('.', '..'):
+            if not entry.isFree():
+                if entry.getName() in ('.', '..'):
                     continue
                 return False
         return True
@@ -497,7 +488,7 @@ class DIRECTORY_DATA(v_types.VArray):
         slots = []
         for i in range(self.num_entries):
             entry = self[i]
-            if entry.is_free:
+            if entry.isFree():
                 slots.append(i)
 
                 if len(slots) == count:
@@ -571,12 +562,12 @@ class DIRECTORY_DATA(v_types.VArray):
         short_name = self._gen83Name(full_name)
         # get the current list of names, so we can ensure we don't conflict.
         # need to use this madness because of the embedded period thats not actually stored
-        # but we are including in entry.name
+        # but we are including in entry.getName()
         names = set([])
-        for entry in self.entries:
-            if entry.is_free:
+        for entry in self.getEntries():
+            if entry.isFree():
                 continue
-            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.is_long_name:
+            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.isLongName():
                 continue
             names.add(entry.DIR_Name.decode('ascii'))
 
@@ -745,7 +736,7 @@ class DIRECTORY_DATA(v_types.VArray):
          the DIRECTORY_DATA for the subdirectory
         type cluster_number: int
         '''
-        if self.is_full:
+        if self.isFull():
             raise DirectoryDataIsFullException()
 
         entries = self._genEntries(name, cluster_number, flags=DIRECTORY_ATTRIBUTES.ATTR_DIRECTORY)
@@ -767,7 +758,7 @@ class DIRECTORY_DATA(v_types.VArray):
          the content of the file
         type cluster_number: int
         '''
-        if self.is_full:
+        if self.isFull():
             raise DirectoryDataIsFullException()
 
         logger.debug('directory: add file: name: %s len: %x  start: %x', name, size, cluster_number)
@@ -794,17 +785,17 @@ class DIRECTORY_DATA(v_types.VArray):
         for i in range(self.num_entries):
             entry = self[i]
 
-            if entry.is_free:
+            if entry.isFree():
                 continue
 
-            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.is_long_name:
+            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.isLongName():
                 indices_to_remove.append(i)
                 current_long_name_entries.append(entry)
                 continue
             else:
                 indices_to_remove.append(i)
 
-            if entry.name == name or name == self._reconstructLongName(current_long_name_entries):
+            if entry.getName() == name or name == self._reconstructLongName(current_long_name_entries):
                 for index in indices_to_remove:
                     logger.debug('directory: del index: index: %x', index)
                     self[index].DIR_Name = b'\xE5' + b'\x00' * (DIR_NAME_SIZE - 1)
@@ -828,11 +819,11 @@ class DIRECTORY_DATA(v_types.VArray):
         # that contain the complete long of the same file
         # so if we find a long name, keep all the subsequent long names until the next 8.3 name
         current_long_name_entries = []
-        for entry in self.entries:
-            if entry.is_free:
+        for entry in self.getEntries():
+            if entry.isFree():
                 continue
 
-            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.is_long_name:
+            if isinstance(entry, LONG_DIRECTORY_ENTRY) or entry.isLongName():
                 if isinstance(entry, LONG_DIRECTORY_ENTRY) and entry.LDIR_Ord & LAST_LONG_ENTRY:
                     current_long_name_entries = []
                 if entry.DIR_Name[0] & LAST_LONG_ENTRY:
@@ -956,18 +947,18 @@ class FAT32(v_types.VStruct):
             fat_sector_start = self.bpb.BPB_RsvdSecCnt
             for i in range(self.bpb.BPB_NumFATs):
                 fat_start = fat_sector_start * mbr.SECTOR_SIZE
-                fat_size = self.fat_size * mbr.SECTOR_SIZE
+                fat_size = self.getFatSize() * mbr.SECTOR_SIZE
                 fat = SubStructureDescriptor('fat_{:d}'.format(i), fat_start, fat_size,
-                        FILE_ALLOCATION_TABLE(self.fat_entry_count))
+                        FILE_ALLOCATION_TABLE(self.getFatEntryCount()))
                 items.append(fat)
-                fat_sector_start += fat_sector_start + self.fat_size
+                fat_sector_start += fat_sector_start + self.getFatSize()
 
         # add cluster array, if the FS is initialized
         if not self._is_new_fs:
             clusters = SubStructureDescriptor('clusters',
-                    self.clusters_offset * mbr.SECTOR_SIZE,
-                    self.cluster_size * self.total_cluster_count,
-                    FAT32ClusterArray(self.cluster_size, self.total_cluster_count))
+                    self.getClustersOffset() * mbr.SECTOR_SIZE,
+                    self.getClusterSize() * self.getTotalClusterCount(),
+                    FAT32ClusterArray(self.getClusterSize(), self.getTotalClusterCount()))
             items.append(clusters)
 
         # exclude any zero-length items
@@ -995,8 +986,7 @@ class FAT32(v_types.VStruct):
             index += 1
             current_offset += item.length
 
-    @property
-    def total_sector_count(self):
+    def getTotalSectorCount(self):
         '''
         total number of sectors in this file system.
         '''
@@ -1005,15 +995,13 @@ class FAT32(v_types.VStruct):
         else:
             return self.bpb.BPB_TotSec32
 
-    @property
-    def total_cluster_count(self):
+    def getTotalClusterCount(self):
         '''
         total number of clusters in this file system.
         '''
-        return (self.total_sector_count - self.clusters_offset) // self.bpb.BPB_SecPerClus
+        return (self.getTotalSectorCount() - self.getClustersOffset()) // self.bpb.BPB_SecPerClus
 
-    @property
-    def fat_size(self):
+    def getFatSize(self):
         '''
         size of each allocation table in sectors.
         '''
@@ -1024,36 +1012,31 @@ class FAT32(v_types.VStruct):
             raise CorruptFileSystemError('invalid FAT size')
         return sz
 
-    @property
-    def fat_entry_count(self):
+    def getFatEntryCount(self):
         '''
         number of entries in each allocation table.
         '''
-        return (self.fat_size * mbr.SECTOR_SIZE) // FAT_ENTRY_SIZE
+        return (self.getFatSize() * mbr.SECTOR_SIZE) // FAT_ENTRY_SIZE
 
-    @property
-    def clusters_offset(self):
+    def getClustersOffset(self):
         '''
         offset in sectors of the start of the cluster array
         '''
-        return self.bpb.BPB_RsvdSecCnt * (self.fat_size * self.bpb.BPB_NumFATs)
+        return self.bpb.BPB_RsvdSecCnt * (self.getFatSize() * self.bpb.BPB_NumFATs)
 
-    @property
-    def cluster_size(self):
+    def getClusterSize(self):
         '''
         size of each cluster in bytes
         '''
         return self.bpb.BPB_SecPerClus * mbr.SECTOR_SIZE
 
-    @property
-    def empty_cluster(self):
+    def getEmptyCluster(self):
         '''
         one cluster's worth of NULL bytes
         '''
-        return b'\x00' * self.cluster_size
+        return b'\x00' * self.getClusterSize()
 
-    @property
-    def fats(self):
+    def getFats(self):
         '''
         sequence of the allocation tables in this file system
         '''
@@ -1067,7 +1050,7 @@ class FAT32(v_types.VStruct):
          against all allocation tables in this file system.
         '''
         values = set([])
-        for f in self.fats:
+        for f in self.getFats():
             values.add(int(f[index]))
         if len(values) > 1:
             raise CorruptFileSystemError('conflicting FAT entries')
@@ -1079,7 +1062,7 @@ class FAT32(v_types.VStruct):
          across all allocation tables in this file system.
         '''
         logger.debug('fat: set fat entry: %x %x', index, value)
-        for f in self.fats:
+        for f in self.getFats():
             f[index] = value
 
     def isClusterFree(self, i):
@@ -1092,7 +1075,7 @@ class FAT32(v_types.VStruct):
         '''
         get the first free cluster in the file system.
         '''
-        for i in range(self.total_cluster_count):
+        for i in range(self.getTotalClusterCount()):
             if self.isClusterFree(i):
                 return i
 
@@ -1119,7 +1102,7 @@ class FAT32(v_types.VStruct):
         rtype: Sequence[int]
         '''
         chains = []
-        for f in self.fats:
+        for f in self.getFats():
             chains.append(f.getClusterChain(cluster_num))
 
         if len(chains) > 1:
@@ -1174,7 +1157,7 @@ class FAT32(v_types.VStruct):
         if len(data) == 0:
             data = b'\x00'
 
-        num_clusters_needed = int(math.ceil(len(data) / self.cluster_size))
+        num_clusters_needed = int(math.ceil(len(data) / self.getClusterSize()))
         # essentially the cluster chain we'll use to store the data
         cluster_numbers = []
 
@@ -1207,7 +1190,7 @@ class FAT32(v_types.VStruct):
         logger.debug('fat: set content: needed clusters: %x', num_clusters_needed - len(cluster_numbers))
         # find `num_clusters_needed` count of free clusters by doing a simple scan.
         # this algorithm could be faster if we cached the list of free clusters somewhere.
-        for i in range(2, self.total_cluster_count):
+        for i in range(2, self.getTotalClusterCount()):
             if self._getFatEntry(i) == CLUSTER_TYPES.UNUSED:
                 logger.debug('fat: set content: found free cluster: %x', i)
                 cluster_numbers.append(i)
@@ -1219,13 +1202,13 @@ class FAT32(v_types.VStruct):
             raise DiskFullException()
 
         # pad out the data to a cluster multiple, or subsequent APIs will get angry
-        if len(data) % self.cluster_size != 0:
-            data = data + b'\x00' * (self.cluster_size - (len(data) % self.cluster_size))
+        if len(data) % self.getClusterSize() != 0:
+            data = data + b'\x00' * (self.getClusterSize() - (len(data) % self.getClusterSize()))
 
         # chunk the data into cluster-sized regions
         cluster_chunks = []
-        for i, cluster_offset in enumerate(range(0, len(data), self.cluster_size)):
-            cluster_chunk = data[cluster_offset:cluster_offset + self.cluster_size]
+        for i, cluster_offset in enumerate(range(0, len(data), self.getClusterSize())):
+            cluster_chunk = data[cluster_offset:cluster_offset + self.getClusterSize()]
             cluster_chunks.append(cluster_chunk)
 
         # actually set the file's contents.
@@ -1333,13 +1316,12 @@ class Directory:
         self.long_name = long_name
         self.cluster_number = cluster_number
 
-    @property
-    def is_empty(self):
+    def isEmpty(self):
         '''
         does this directory have any children?
         '''
         dir_data = self._fs.getDirectoryData(self.cluster_number)
-        return dir_data.is_empty
+        return dir_data.isEmpty()
 
     def getSubDirectories(self):
         '''
@@ -1352,7 +1334,7 @@ class Directory:
             if not entry.DIR_Attr & DIRECTORY_ATTRIBUTES.ATTR_DIRECTORY:
                 continue
 
-            yield Directory(self._fs, entry.name, entry.first_cluster, long_name=long_name)
+            yield Directory(self._fs, entry.getName(), entry.getFirstClusterNumber(), long_name=long_name)
 
     def getFiles(self):
         '''
@@ -1365,7 +1347,7 @@ class Directory:
             if entry.DIR_Attr & DIRECTORY_ATTRIBUTES.ATTR_DIRECTORY:
                 continue
 
-            yield File(self._fs, entry.name, entry.first_cluster, entry.DIR_FileSize, long_name=long_name)
+            yield File(self._fs, entry.getName(), entry.getFirstClusterNumber(), entry.DIR_FileSize, long_name=long_name)
 
     def __str__(self):
         return 'Directory (name: %s)' % (self.long_name or self.short_name)
@@ -1542,7 +1524,7 @@ class FAT32LogicalFileSystem:
         dir_data = self._fat.getDirectoryData(cluster_number)
         # allocate the directory entry, one cluster larger
         d = dir_data.vsEmit()
-        d += self._fat.empty_cluster
+        d += self._fat.getEmptyCluster()
         self._fat.setContent(cluster_number, d)
 
     def addDirectory(self, path):
@@ -1566,7 +1548,7 @@ class FAT32LogicalFileSystem:
 
         # allocate an initially empty directory data run of one cluster in length
         # and add the required dot entries to it
-        child_cluster_number = self._fat.addContent(self._fat.empty_cluster)
+        child_cluster_number = self._fat.addContent(self._fat.getEmptyCluster())
         child_dir_data = self._fat.getDirectoryData(child_cluster_number)
         child_dir_data.addDirectoryEntry('.', child_cluster_number)
         child_dir_data.addDirectoryEntry('..', parent_dir.cluster_number)
@@ -1598,7 +1580,7 @@ class FAT32LogicalFileSystem:
         parent_dir = self._getDirectory(parent)
         child_dir = self._getDirectory(path)
 
-        if not child_dir.is_empty:
+        if not child_dir.isEmpty():
             raise DirectoryNotEmptyException()
 
         self._fat.delContent(child_dir.cluster_number)

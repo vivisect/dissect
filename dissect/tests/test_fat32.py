@@ -158,7 +158,7 @@ def create_fat32_filesystem(path, partition_offset, size):
         fs.bpb_backup.BPB_BootCode = fs.bpb.BPB_BootCode
         fs.bpb_backup.EndOfSectorMarker = fs.bpb.EndOfSectorMarker
 
-        for f in fs.fats:
+        for f in fs.getFats():
             f[0] = 0x0FFFFFF8  # from Linux sample
             f[1] = 0x0FFFFFFF
 
@@ -184,8 +184,10 @@ def test_image():
         yield
 
     finally:
-        os.remove(TEST_IMAGE_PATH)
-        pass
+        try:
+            os.remove(TEST_IMAGE_PATH)
+        except:
+            pass
 
 
 @contextlib.contextmanager
@@ -230,10 +232,10 @@ class TestPyFAT(unittest.TestCase):
     def test_cluster_access(self):
         with test_fs() as fs:
             # test directly set cluster content
-            self.assertEqual(len(fs.clusters[3]), fs.cluster_size)
-            self.assertEqual(bytes(fs.clusters[3]), b"\x00" * fs.cluster_size)
-            fs.clusters[3] = b"\x69" * fs.cluster_size
-            self.assertEqual(bytes(fs.clusters[3]), b"\x69" * fs.cluster_size)
+            self.assertEqual(len(fs.clusters[3]), fs.getClusterSize())
+            self.assertEqual(bytes(fs.clusters[3]), b"\x00" * fs.getClusterSize())
+            fs.clusters[3] = b"\x69" * fs.getClusterSize()
+            self.assertEqual(bytes(fs.clusters[3]), b"\x69" * fs.getClusterSize())
 
             # although the data is set, the cluster is still free
             # FAT table: [0] reserved, [1] reserved, [2] root, [3] free, [4] free
@@ -297,8 +299,8 @@ class TestPyFAT(unittest.TestCase):
                     ]
 
             for case in cases:
-                v1 = b"A" * fs.cluster_size * case["cluster_count_one"]
-                v2 = b"B" * fs.cluster_size * case["cluster_count_two"]
+                v1 = b"A" * fs.getClusterSize() * case["cluster_count_one"]
+                v2 = b"B" * fs.getClusterSize() * case["cluster_count_two"]
 
                 p = fs.addContent(v1)
                 self.assertEqual(fs.getContent(p).rstrip(b"\x00"), v1)
@@ -422,7 +424,11 @@ class TestPyFAT(unittest.TestCase):
 
 
 def test():
-    logging.basicConfig(level=logging.DEBUG)
+    import sys
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
     try:
         unittest.main()
     except SystemExit:
