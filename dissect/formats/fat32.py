@@ -1293,6 +1293,7 @@ class File:
         self.long_name = long_name
         self.cluster_number = cluster_number
         self.size = size
+        self._offset = 0
 
     def getContent(self):
         '''
@@ -1304,6 +1305,33 @@ class File:
 
     def __str__(self):
         return 'File (name: %s)' % (self.long_name or self.short_name)
+
+    def seek(self, offset, whence=0):
+        if whence == 0:
+            self._offset = offset
+        elif whence == 1:
+            self._offset += offset
+        elif whence == 2:
+            self._offset = self.size - offset
+        else:
+            raise IllegalArgumentException("whence must be 0, 1, or 2")
+
+    def tell(self):
+        return self._offset
+
+    def read(self, length=None):
+        if self._offset > self.size:
+            return ""
+
+        start = self._offset
+        end = None
+        if length is None:
+            end = self.size
+        else:
+            end = min(self.size, start + length)
+
+        self._offset = end
+        return self.getContent()[start:end]
 
 
 class Directory:
