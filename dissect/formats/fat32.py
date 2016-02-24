@@ -11,7 +11,7 @@ import vstruct.types as v_types
 import dissect.formats.mbr as mbr
 
 
-g_logger = logging.getLogger('dissect.formats.fat32')
+logger = logging.getLogger(__name__)
 
 
 class FileExistsException(Exception):
@@ -753,9 +753,9 @@ class DIRECTORY_DATA(v_types.VArray):
 
         entries = self._genEntries(name, cluster_number, flags=DIRECTORY_ATTRIBUTES.ATTR_DIRECTORY)
 
-        g_logger.debug('directory: add directory: name: %s start: %x', name, cluster_number)
+        logger.debug('directory: add directory: name: %s start: %x', name, cluster_number)
         for i, entry in zip(self.getEmptySlots(len(entries)), entries):
-            g_logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
+            logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
             self[i] = entry
 
     def addFileEntry(self, name, size, cluster_number):
@@ -773,10 +773,10 @@ class DIRECTORY_DATA(v_types.VArray):
         if self.is_full:
             raise DirectoryDataIsFullException()
 
-        g_logger.debug('directory: add file: name: %s len: %x  start: %x', name, size, cluster_number)
+        logger.debug('directory: add file: name: %s len: %x  start: %x', name, size, cluster_number)
         entries = self._genEntries(name, cluster_number, size=size)
         for i, entry in zip(self.getEmptySlots(len(entries)), entries):
-            g_logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
+            logger.debug('directory: add entry: slot: %d fragment: %s', i, str(entry))
             self[i] = entry
 
     def delEntry(self, name):
@@ -793,7 +793,7 @@ class DIRECTORY_DATA(v_types.VArray):
         indices_to_remove = []
         current_long_name_entries = []
 
-        g_logger.debug('directory: del entry: name: %s', name)
+        logger.debug('directory: del entry: name: %s', name)
         entries = self._genEntries(name, cluster_number, size=size)
         for i in range(self.num_entries):
             entry = self[i]
@@ -810,7 +810,7 @@ class DIRECTORY_DATA(v_types.VArray):
 
             if entry.name == name or name == self._reconstructLongName(current_long_name_entries):
                 for index in indices_to_remove:
-                    g_logger.debug('directory: del index: index: %x', index)
+                    logger.debug('directory: del index: index: %x', index)
                     self[index].DIR_Name = b'\xE5' + b'\x00' * (DIR_NAME_SIZE - 1)
                 return
             else:
@@ -1082,7 +1082,7 @@ class FAT32(v_types.VStruct):
         set the allocation table entry at the given index, mirroring the value
          across all allocation tables in this file system.
         '''
-        g_logger.debug('fat: set fat entry: %x %x', index, value)
+        logger.debug('fat: set fat entry: %x %x', index, value)
         for f in self.fats:
             f[index] = value
 
@@ -1104,7 +1104,7 @@ class FAT32(v_types.VStruct):
         '''
         set a cluster as unallocated.
         '''
-        g_logger.debug('fat: set entry free: %x', i)
+        logger.debug('fat: set entry free: %x', i)
         self._setFatEntry(i, CLUSTER_TYPES.UNUSED)
 
     def markClusterUsed(self, i, next_cluster=CLUSTER_TYPES.LAST):
@@ -1113,7 +1113,7 @@ class FAT32(v_types.VStruct):
         if `next_cluster` is provided then it is the next cluster number in the chain.
         otherwise, this is the last entry in the chain.
         '''
-        g_logger.debug('fat: set entry used: %x', i)
+        logger.debug('fat: set entry used: %x', i)
         self._setFatEntry(i, next_cluster)
 
     def getClusterChain(self, cluster_num):
@@ -1182,13 +1182,13 @@ class FAT32(v_types.VStruct):
         # essentially the cluster chain we'll use to store the data
         cluster_numbers = []
 
-        g_logger.debug('fat: set content: start: %x len: %x', start_cluster_num, len(data))
-        g_logger.debug('fat: set content: clusters needed: %x', num_clusters_needed)
+        logger.debug('fat: set content: start: %x len: %x', start_cluster_num, len(data))
+        logger.debug('fat: set content: clusters needed: %x', num_clusters_needed)
 
         if self.isClusterFree(start_cluster_num):
-            g_logger.debug('fat: set content: new allocation')
+            logger.debug('fat: set content: new allocation')
         else:
-            g_logger.debug('fat: set content: existing allocation')
+            logger.debug('fat: set content: existing allocation')
             cluster_chain = self.getClusterChain(start_cluster_num)
 
             # don't get confused by the final entry of the cluster chain, which is always a LAST entry
@@ -1202,18 +1202,18 @@ class FAT32(v_types.VStruct):
             if num_new_clusters_needed < 0:
                 # the existing cluster chain is longer than needed
                 # so mark the tail entries as UNUSED, and the final as LAST
-                g_logger.debug('fat: set content: clipping existing allocation: %x clusters', -num_new_clusters_needed)
+                logger.debug('fat: set content: clipping existing allocation: %x clusters', -num_new_clusters_needed)
                 for i in range(num_new_clusters_needed, -1):
                     self.markClusterFree(cluster_chain[i])
                 self.markClusterUsed(cluster_chain[num_new_clusters_needed], CLUSTER_TYPES.LAST)
                 num_new_clusters_needed = 0
 
-        g_logger.debug('fat: set content: needed clusters: %x', num_clusters_needed - len(cluster_numbers))
+        logger.debug('fat: set content: needed clusters: %x', num_clusters_needed - len(cluster_numbers))
         # find `num_clusters_needed` count of free clusters by doing a simple scan.
         # this algorithm could be faster if we cached the list of free clusters somewhere.
         for i in range(2, self.total_cluster_count):
             if self._getFatEntry(i) == CLUSTER_TYPES.UNUSED:
-                g_logger.debug('fat: set content: found free cluster: %x', i)
+                logger.debug('fat: set content: found free cluster: %x', i)
                 cluster_numbers.append(i)
 
             if len(cluster_numbers) == num_clusters_needed:
@@ -1236,16 +1236,16 @@ class FAT32(v_types.VStruct):
         # note that at this point, these clusters aren't actually allocated.
         # ...good thing we're not supporting concurrency
         for cluster_num, cluster_chunk in zip(cluster_numbers, cluster_chunks):
-            g_logger.debug('fat: set content: set cluster: %x', cluster_num)
+            logger.debug('fat: set content: set cluster: %x', cluster_num)
             self.clusters[cluster_num] = cluster_chunk
 
         # set the cluster chain in the file allocation table
-        g_logger.debug('setting chain: ...')
+        logger.debug('setting chain: ...')
         cur_cluster_num = cluster_numbers.pop(0)
         first_cluster_num = cur_cluster_num
         while len(cluster_numbers) > 0:
             self.markClusterUsed(cur_cluster_num, cluster_numbers[0])
-            g_logger.debug('chain entry: %s %s' % (hex(cur_cluster_num), hex(cluster_numbers[0])))
+            logger.debug('chain entry: %s %s' % (hex(cur_cluster_num), hex(cluster_numbers[0])))
             cur_cluster_num = cluster_numbers.pop(0)
         self.markClusterUsed(cur_cluster_num, CLUSTER_TYPES.LAST)
 
@@ -1259,7 +1259,7 @@ class FAT32(v_types.VStruct):
         rtype: int
         '''
         num = self.getFreeClusterNumber()
-        g_logger.debug('add content: free cluster: %x len: %x', num, len(data))
+        logger.debug('add content: free cluster: %x len: %x', num, len(data))
         self.setContent(num, data)
         return num
 
@@ -1286,8 +1286,8 @@ class FAT32(v_types.VStruct):
         run_data = self.getContent(start_cluster_number)
         num_entries = len(run_data) // FILE_ENTRY_SIZE
         if num_entries > 200:
-            g_logger.debug('directory data: chain: %s', self.getClusterChain(start_cluster_number))
-            g_logger.debug('directory data: start: %x len: %x num: %x', start_cluster_number, len(run_data), num_entries)
+            logger.debug('directory data: chain: %s', self.getClusterChain(start_cluster_number))
+            logger.debug('directory data: start: %x len: %x num: %x', start_cluster_number, len(run_data), num_entries)
         dir_data = DIRECTORY_DATA(num_entries)
         dir_data.vsParse(run_data)
         return dir_data
