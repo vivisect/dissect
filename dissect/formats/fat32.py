@@ -4,6 +4,7 @@ FAT32 file system structures. Read-write FAT32 file system driver.
 import os
 import math
 import logging
+import posixpath
 import functools
 
 import vstruct.types as v_types
@@ -1379,8 +1380,8 @@ class FAT32LogicalFileSystem:
         type path: unicode
         type contents: bytes
         '''
-        parent = os.path.dirname(path)
-        child = os.path.basename(path)
+        parent = posixpath.dirname(path)
+        child = posixpath.basename(path)
 
         parent_dir = self._getDirectory(parent)
         for d in parent_dir.getFiles():
@@ -1411,8 +1412,8 @@ class FAT32LogicalFileSystem:
 
         type path: unicode
         '''
-        parent = os.path.dirname(path)
-        child = os.path.basename(path)
+        parent = posixpath.dirname(path)
+        child = posixpath.basename(path)
 
         child_entry = None
         parent_dir = self._getDirectory(parent)
@@ -1536,8 +1537,8 @@ class FAT32LogicalFileSystem:
 
         type path: unicode
         '''
-        parent = os.path.dirname(path)
-        child = os.path.basename(path)
+        parent = posixpath.dirname(path)
+        child = posixpath.basename(path)
 
         parent_dir = self._getDirectory(parent)
         for d in parent_dir.getSubDirectories():
@@ -1574,8 +1575,8 @@ class FAT32LogicalFileSystem:
 
         type path: unicode
         '''
-        parent = os.path.dirname(path)
-        child = os.path.basename(path)
+        parent = posixpath.dirname(path)
+        child = posixpath.basename(path)
 
         parent_dir = self._getDirectory(parent)
         child_dir = self._getDirectory(path)
