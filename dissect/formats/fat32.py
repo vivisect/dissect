@@ -196,7 +196,7 @@ class FS_INFO(v_types.VStruct):
 
 
 LAST_CLUSTER_CHAIN_ENTRIES = (CLUSTER_TYPES.UNUSED, CLUSTER_TYPES.BAD, CLUSTER_TYPES.LAST)
-             
+
 
 class FILE_ALLOCATION_TABLE(v_types.VArray):
     '''
@@ -952,7 +952,7 @@ class FAT32(v_types.VStruct):
                 fat = SubStructureDescriptor('fat_{:d}'.format(i), fat_start, fat_size,
                         FILE_ALLOCATION_TABLE(self.getFatEntryCount()))
                 items.append(fat)
-                fat_sector_start += fat_sector_start + self.getFatSize()
+                fat_sector_start += self.getFatSize()
 
         # add cluster array, if the FS is initialized
         if not self._is_new_fs:
@@ -961,6 +961,9 @@ class FAT32(v_types.VStruct):
                     self.getClusterSize() * self.getTotalClusterCount(),
                     FAT32ClusterArray(self.getClusterSize(), self.getTotalClusterCount()))
             items.append(clusters)
+
+        for item in items:
+            logger.info("fs structure layout: %s: %x %x", item.name, item.offset, item.length)
 
         # exclude any zero-length items
         items = filter(lambda i: i.length != 0, items)
@@ -1023,7 +1026,7 @@ class FAT32(v_types.VStruct):
         '''
         offset in sectors of the start of the cluster array
         '''
-        return self.bpb.BPB_RsvdSecCnt * (self.getFatSize() * self.bpb.BPB_NumFATs)
+        return self.bpb.BPB_RsvdSecCnt + (self.getFatSize() * self.bpb.BPB_NumFATs)
 
     def getClusterSize(self):
         '''
@@ -1547,7 +1550,7 @@ class FAT32LogicalFileSystem:
 
     def _growDirectoryData(self, cluster_number):
         '''
-        increase the size by one cluster of the data directory that starts at 
+        increase the size by one cluster of the data directory that starts at
          the cluster chain beginning at the given cluste number.
         '''
         dir_data = self._fat.getDirectoryData(cluster_number)
