@@ -7,7 +7,7 @@ import logging
 import contextlib
 import collections
 
-import vstruct.types as v_types
+import vstruct2.types as v_types
 
 
 # assumption: sectors are 512-bytes in lenght

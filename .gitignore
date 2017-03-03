@@ -3,3 +3,7 @@
 *.py~
 .hg*
 __pycache__
+
+dist
+build
+dissect.egg-info

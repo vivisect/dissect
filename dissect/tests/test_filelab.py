@@ -1,7 +1,7 @@
 import io
 import unittest
 
-from vstruct.types import *
+from vstruct2.types import *
 from dissect.filelab import *
 
 class CommonTest(unittest.TestCase):

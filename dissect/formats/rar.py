@@ -3,7 +3,7 @@ import sys
 
 from binascii import unhexlify as xeh
 
-from vstruct.types import *
+from vstruct2.types import *
 from dissect.filelab import *
 
 #HEAD_TYPE_MARKER        = 0x72          #marker block

@@ -2,7 +2,7 @@ from __future__ import absolute_import,unicode_literals
 
 import socket
 
-from vstruct.types import *
+from vstruct2.types import *
 
 '''
 Inet Packet Structures

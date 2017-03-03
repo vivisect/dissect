@@ -7,7 +7,7 @@ import logging
 import posixpath
 import functools
 
-import vstruct.types as v_types
+import vstruct2.types as v_types
 
 import dissect.formats.mbr as mbr
 

@@ -10,7 +10,7 @@ def bits(byts, order='big', cb=iterbytes):
     bord = LSB
     if order == 'big':
         bord = MSB
-    
+
     #foo = [ ((b >> shft) & 0x01) for b in cb(byts) for shft in bord ]
     #for b in foo:
     #    yield b

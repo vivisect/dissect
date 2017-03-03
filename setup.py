@@ -21,14 +21,14 @@ setup(
     version='.'.join( str(v) for v in dissect.__version__ ),
     description='Vivisect (Mark II) File/Protocol Parsers',
     author='Invisigoth Kenshoto',
-    author_email='invisigoth.kenshoto@gmail.com',
+    author_email='visi@vertex.link',
     url='https://github.com/vivisect/dissect',
     license='Apache License 2.0',
 
     packages=find_packages(exclude=['*.tests','*.tests.*']),
 
     install_requires=[
-        'vstruct>=2.0.2',
+        'vstruct2>=2.0.2',
     ],
 
     classifiers=[

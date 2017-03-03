@@ -1,7 +1,7 @@
 import tempfile
 from io import BytesIO
 
-from vstruct.types import *
+from vstruct2.types import *
 from dissect.filelab import *
 import dissect.bitlab as bitlab
 import dissect.algos.mszip as mszip 
