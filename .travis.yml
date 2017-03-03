@@ -4,5 +4,5 @@ language: python
 python:
     - "3.4"
 install:
-    - pip install vstruct
+    - pip install vstruct2
 script: py.test
