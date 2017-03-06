@@ -20,10 +20,9 @@ class CommonTest(unittest.TestCase):
             def __init__(self, fd, off=0):
                 FileLab.__init__(self, fd, off=off)
 
-                self.addOnDemand('woot',self._getWoot)
-
-                self.addOnDemand('baz',self._getFooBaz)
-                self.addOnDemand('bars',self._getFooBars)
+                self.add('woot',self._getWoot)
+                self.add('baz',self._getFooBaz)
+                self.add('bars',self._getFooBars)
 
             def _getFooBaz(self):
                 return 'foobaz'

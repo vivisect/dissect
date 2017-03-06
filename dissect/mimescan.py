@@ -1,4 +1,5 @@
 
+import dissect.formats.pe as d_pe
 
 typers = []
 scanners = []
@@ -31,3 +32,7 @@ def getMimeType(fd):
     '''
     Returns a mime type name for the file content.
     '''
+    for mime,typer in typers:
+        fd.seek(0)
+        if typer(fd):
+            return mime

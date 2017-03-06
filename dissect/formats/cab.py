@@ -134,8 +134,8 @@ class CabLab(FileLab):
 
     def __init__(self, fd, off=0):
         FileLab.__init__(self, fd, off=off)
-        self.addOnDemand('CFHEADER', self._getCabHeader )
-        self.addOnDemand('filesbyname', self._loadFilesByName )
+        self.add('CFHEADER', self._getCabHeader )
+        self.add('filesbyname', self._loadFilesByName )
 
         self.decomps = {
             comp.NONE:self._deCompNoneBlock,

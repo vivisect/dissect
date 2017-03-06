@@ -1,5 +1,6 @@
-import unittest
 import hashlib
+import unittest
+
 import dissect.formats.cab as cab
 import dissect.tests.files as files
 

@@ -327,8 +327,8 @@ class RarLab(FileLab):
 
     def __init__(self, fd):
         FileLab.__init__(self, fd)
-        self.addOnDemand('veroff', self._getVerOff )
-        self.addOnDemand('header', self._getRarHeader )
+        self.add('veroff', self._getVerOff )
+        self.add('header', self._getRarHeader )
 
         #self.fd = None
         #self.aes = None

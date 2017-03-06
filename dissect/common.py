@@ -25,15 +25,52 @@ class OnDemand(collections.defaultdict):
 
     def __init__(self):
         collections.defaultdict.__init__(self)
-        self.ctors = {}
-        self.names = []
+        self._ondem_ctors = {}
 
     def add(self, name, ctor, *args, **kwargs):
-        self.names.append(name)
-        self.ctors[name] = (ctor,args,kwargs)
+        '''
+        Add on-demand parser callback.
+
+        Example:
+
+            class FooLab(FileLab):
+
+                def __init__(self, fd, off=0):
+                    FileLab.__init__(self, fd, off=off)
+                    self.add('bars', self._getFooBars )
+
+                def _getFooBars(self):
+                    return []
+
+            foo = FooLab()
+            for bar in foo.get('bars'):
+                dostuff()
+        '''
+        self._ondem_ctors[name] = (ctor,args,kwargs)
+
+    def get(self, name, defval=None):
+        '''
+        Retrieve the results of an on-demand parser callback.
+
+        Example:
+
+            for bar in foo.get('bars'):
+                dostuff()
+
+        '''
+        retn = self[name]
+        if retn == None:
+            retn = defval
+        return retn
+
+    def set(self, name, valu):
+        '''
+        Set an explicit value in the on-demand dict.
+        '''
+        self[name] = valu
 
     def __missing__(self, key):
-        meth,args,kwargs = self.ctors.get(key)
+        meth,args,kwargs = self._ondem_ctors.get(key)
         val = meth(*args,**kwargs)
         self[key] = val
         return val
